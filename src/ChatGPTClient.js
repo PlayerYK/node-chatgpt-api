@@ -58,82 +58,96 @@ export default class ChatGPTClient {
         }
         modelOptions.prompt = prompt;
         const debug = this.options.debug;
+        console.log("debug", debug);
         if (debug) {
-            console.debug(modelOptions);
+          console.debug(modelOptions);
         }
-        const url = 'https://api.openai.com/v1/completions';
+        const url = "https://api.openai.com/v1/completions";
         const opts = {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                Authorization: `Bearer ${this.apiKey}`,
-            },
-            body: JSON.stringify(modelOptions),
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            Authorization: `Bearer ${this.apiKey}`,
+          },
+          body: JSON.stringify(modelOptions),
         };
         if (modelOptions.stream) {
-            return new Promise(async (resolve, reject) => {
-                const controller = new AbortController();
-                try {
-                    await fetchEventSource(url, {
-                        ...opts,
-                        signal: controller.signal,
-                        async onopen(response) {
-                            if (response.status === 200) {
-                                return;
-                            }
-                            if (debug) {
-                                console.debug(response);
-                            }
-                            let error;
-                            try {
-                                const body = await response.text();
-                                error = new Error(`Failed to send message. HTTP ${response.status} - ${body}`);
-                                error.status = response.status;
-                                error.json = JSON.parse(body);
-                            } catch {
-                                error = error || new Error(`Failed to send message. HTTP ${response.status}`);
-                            }
-                            throw error;
-                        },
-                        onclose() {
-                            throw new Error(`Failed to send message. Server closed the connection unexpectedly.`);
-                        },
-                        onerror(err) {
-                            if (debug) {
-                                console.debug(err);
-                            }
-                            // rethrow to stop the operation
-                            throw err;
-                        },
-                        onmessage(message) {
-                            if (debug) {
-                                console.debug(message);
-                            }
-                            if (message.data === '[DONE]') {
-                                onProgress('[DONE]');
-                                controller.abort();
-                                resolve();
-                                return;
-                            }
-                            onProgress(JSON.parse(message.data));
-                        },
-                    });
-                } catch (err) {
-                    reject(err);
-                }
-            });
+          return new Promise(async (resolve, reject) => {
+            const controller = new AbortController();
+            try {
+              await fetchEventSource(url, {
+                ...opts,
+                signal: controller.signal,
+                async onopen(response) {
+                  if (response.status === 200) {
+                    return;
+                  }
+                  if (debug) {
+                    console.debug(response);
+                  }
+                  let error;
+                  try {
+                    const body = await response.text();
+                    error = new Error(
+                      `Failed to send message. HTTP ${response.status} - ${body}`
+                    );
+                    error.status = response.status;
+                    error.json = JSON.parse(body);
+                  } catch {
+                    error =
+                      error ||
+                      new Error(
+                        `Failed to send message. HTTP ${response.status}`
+                      );
+                  }
+                  throw error;
+                },
+                onclose() {
+                  throw new Error(
+                    `Failed to send message. Server closed the connection unexpectedly.`
+                  );
+                },
+                onerror(err) {
+                  if (debug) {
+                    console.debug(err);
+                  }
+                  // rethrow to stop the operation
+                  throw err;
+                },
+                onmessage(message) {
+                  if (debug) {
+                    console.debug(message);
+                  }
+                  if (message.data === "[DONE]") {
+                    onProgress("[DONE]");
+                    controller.abort();
+                    resolve();
+                    return;
+                  }
+                  onProgress(JSON.parse(message.data));
+                },
+              });
+            } catch (err) {
+              reject(err);
+            }
+          });
         }
         const response = await fetch(url, opts);
         if (response.status !== 200) {
-            const body = await response.text();
-            const error = new Error(`Failed to send message. HTTP ${response.status} - ${body}`);
-            error.status = response.status;
-            try {
-                error.json = JSON.parse(body);
-            } catch {
-                error.body = body;
-            }
-            throw error;
+          const body = await response.text();
+          const error = new Error(
+            `Failed to send message. HTTP ${response.status}`
+          );
+          error.status = response.status;
+          try {
+            error.json = JSON.parse(body);
+          } catch {
+            error.body = body;
+          }
+          console.log("--- fetch response error 开始---");
+          console.log(error);
+          console.log("--- fetch response error 结束---");
+          throw error;
         }
         return response.json();
     }

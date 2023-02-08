@@ -51,75 +51,82 @@ await server.register(cors, {
     origin: '*',
 });
 
-server.post('/conversation', async (request, reply) => {
-    const body = request.body || {};
+server.post("/conversation", async (request, reply) => {
+  const strBody = request.body || "";
+  const body = JSON.parse(strBody) || {};
 
-    const conversationId = body.conversationId ? body.conversationId.toString() : undefined;
+  const conversationId = body.conversationId
+    ? body.conversationId.toString()
+    : undefined;
 
-    let onProgress;
+  let onProgress;
+  if (body.stream === true) {
+    onProgress = (token) => {
+      if (settings.apiOptions?.debug) {
+        console.debug(token);
+      }
+      reply.sse({ id: "", data: token });
+    };
+  } else {
+    onProgress = null;
+  }
+
+  let result;
+  let error;
+  try {
+    if (!body.message) {
+      const invalidError = new Error();
+      invalidError.data = {
+        code: 400,
+        message: "The message parameter is required.",
+      };
+      // noinspection ExceptionCaughtLocallyJS
+      throw invalidError;
+    }
+    const parentMessageId = body.parentMessageId
+      ? body.parentMessageId.toString()
+      : undefined;
+    result = await chatGptClient.sendMessage(body.message, {
+      conversationId,
+      parentMessageId,
+      onProgress,
+    });
+  } catch (e) {
+    error = e;
+  }
+
+  if (result !== undefined) {
     if (body.stream === true) {
-        onProgress = (token) => {
-            if (settings.apiOptions?.debug) {
-                console.debug(token);
-            }
-            reply.sse({ id: '', data: token });
-        };
+      reply.sse({ id: "", data: "[DONE]" });
     } else {
-        onProgress = null;
+      reply.send(result);
     }
-
-    let result;
-    let error;
-    try {
-        if (!body.message) {
-            const invalidError = new Error();
-            invalidError.data = {
-                code: 400,
-                message: 'The message parameter is required.',
-            };
-            // noinspection ExceptionCaughtLocallyJS
-            throw invalidError;
-        }
-        const parentMessageId = body.parentMessageId ? body.parentMessageId.toString() : undefined;
-        result = await chatGptClient.sendMessage(body.message, {
-            conversationId,
-            parentMessageId,
-            onProgress,
-        });
-    } catch (e) {
-        error = e;
+    if (settings.apiOptions?.debug) {
+      console.debug(result);
     }
-
-    if (result !== undefined) {
-        if (body.stream === true) {
-            reply.sse({ id: '', data: '[DONE]' });
-        } else {
-            reply.send(result);
-        }
-        if (settings.apiOptions?.debug) {
-            console.debug(result);
-        }
+  } else {
+    const code = error?.status || 503;
+    if (code === 503) {
+      console.error(error);
+    } else if (settings.apiOptions?.debug) {
+      console.debug(error);
+    }
+    const message =
+      error?.json?.error?.message ||
+      "There was an error communicating with ChatGPT.";
+    if (body.stream === true) {
+      reply.sse({
+        id: "",
+        event: "error",
+        data: JSON.stringify({
+          code,
+          error: message,
+        }),
+      });
     } else {
-        const code = error?.data?.code || 503;
-        if (code === 503) {
-            console.error(error);
-        } else if (settings.apiOptions?.debug) {
-            console.debug(error);
-        }
-        const message = error?.data?.message || 'There was an error communicating with ChatGPT.';
-        if (body.stream === true) {
-            reply.sse({
-                id: '',
-                event: 'error',
-                data: JSON.stringify({
-                    code,
-                    error: message,
-                }),
-            });
-        } else {
-            reply.code(code).send({ error: message });
-        }
+      reply.code(code).send({ error: message });
     }
+  }
 });
 
 server.listen({
